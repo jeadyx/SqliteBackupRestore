@@ -36,7 +36,7 @@ android {
 
 
 group = "io.github.jeadyx"
-version = "1.0"
+version = "1.2"
 val tokenUsername:String by project
 val tokenPassword:String by project
 sonatypeUploader {
@@ -45,7 +45,7 @@ sonatypeUploader {
     tokenPasswd = tokenPassword
     pom = Action<MavenPom> {
         name.set("SqliteBackupRestore")
-        description.set("A library for backup and restore sqlite database based room")
+        description.set("A library for backup and restore sqlite database")
         url.set("https://github.com/jeadyx/SqliteBackupRestore")
         scm {
             connection.set("scm:git:git://github.com/jeadyx/SqliteBackupRestore.git")
@@ -64,13 +64,18 @@ sonatypeUploader {
                 name.set("Jeady")
             }
         }
-//        withXml {
-//            val dependenciesNode = asNode().appendNode("dependencies")
-//            val dependencyNetManager = dependenciesNode.appendNode("dependency")
-//            dependencyNetManager.appendNode("groupId", "io.github.jeadyx.compose")
-//            dependencyNetManager.appendNode("artifactId", "SimpleNetManager")
-//            dependencyNetManager.appendNode("version", "1.2")
-//        }
+        withXml {
+            val dependenciesNode = asNode().appendNode("dependencies")
+            val dependencyGitManager = dependenciesNode.appendNode("dependency")
+            dependencyGitManager.appendNode("groupId", "io.github.jeadyx.compose")
+            dependencyGitManager.appendNode("artifactId", "gitVersionManager")
+            dependencyGitManager.appendNode("version", "1.3")
+            val dependencyUtil = dependenciesNode.appendNode("dependency")
+            //pkg:maven/io.github.jeadyx.compose/util
+            dependencyUtil.appendNode("groupId", "io.github.jeadyx.compose")
+            dependencyUtil.appendNode("artifactId", "util")
+            dependencyUtil.appendNode("version", "1.1")
+        }
     }
 }
 
@@ -79,8 +84,8 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
-    implementation("io.github.jeadyx.compose:gitVersionManager:1.2")
-    implementation("io.github.jeadyx.compose:util:1.1")
+    implementation(libs.gitversionmanager)
+    implementation(libs.util)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

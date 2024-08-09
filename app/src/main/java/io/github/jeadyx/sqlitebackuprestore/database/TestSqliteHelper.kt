@@ -120,7 +120,7 @@ class TestSqliteHelper(context: Context, private val dbName: String, private val
     }
     fun query(where: String?=null, fieldFilter: Array<String>?=null): List<Map<String, String>>{
         val cursor =
-            this.readableDatabase.query(tbName, fieldFilter, where, fields, null, null, null)
+            this.readableDatabase.query(tbName, fieldFilter, where, null, null, null, null)
         Log.d(TAG, "query: count ${cursor.count}, ${cursor.columnNames.toList()}")
         val ret = mutableListOf<Map<String, String>>()
         while (cursor.moveToNext()){

@@ -6,14 +6,14 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
 
-class SqliteBackupHelper(context: Context,
-                         private var sqliteHelper: SQLiteOpenHelper,
+class SqliteBackupHelper(private var sqliteHelper: SQLiteOpenHelper,
                          private var tbName: String,
-                         private var fields: Array<String>
+                         private var primaryKey: String="id"
 ){
     private val TAG = "[SqliteBackupHelper]"
 
     fun insertDataSet(data: ContentValues): Long{
+        data.remove(primaryKey)
         val db = sqliteHelper.writableDatabase
         db.insert(tbName, null, data)
 
@@ -36,9 +36,8 @@ class SqliteBackupHelper(context: Context,
 
     fun merge(otherDbFile: String): String?{
         val otherDb = SQLiteDatabase.openDatabase(otherDbFile, null, SQLiteDatabase.OPEN_READONLY)
-        val count = count()
         try {
-            val cursor = otherDb.query(tbName, fields, null, null, null, null, null)
+            val cursor = otherDb.query(tbName, null, null, null, null, null, null)
             while (cursor.moveToNext()){
                 val values = ContentValues().also { content->
                     cursor.columnNames.forEach {

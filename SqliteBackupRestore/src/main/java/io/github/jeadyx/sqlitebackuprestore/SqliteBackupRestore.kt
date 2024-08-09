@@ -11,14 +11,27 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 
+/**
+ * Simple to backup and restore your sqlite database from local or git server.
+ */
 object SqliteBackupRestore {
     private const val TAG = "[SqliteBackupRestore]"
-    private lateinit var gitManager: GitManager
+    lateinit var gitManager: GitManager
     private lateinit var downloadDir: String
     private lateinit var downloadDbPath: String
     private lateinit var originDbPath: String
     private lateinit var dbHelper: SqliteBackupHelper
+
+    /**
+     * error message when running
+     */
     var errMsg = ""
+
+    /**
+     * init with local backup sys
+     * @param context: context
+     * @param dbInfo: sqlite database info [DbInfo]
+     */
     fun init(context: Context, dbInfo: DbInfo): SqliteBackupRestore{
         downloadDir = run{
             val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path
@@ -30,30 +43,44 @@ object SqliteBackupRestore {
             }
             saveDir
         }
-        dbHelper = SqliteBackupHelper(context, dbInfo.dbHelper, dbInfo.table, dbInfo.fields)
+        dbHelper = SqliteBackupHelper(dbInfo.dbHelper, dbInfo.table)
         originDbPath = context.dataDir.path + "/databases/${dbInfo.database}"
         downloadDbPath = "$downloadDir/${dbInfo.database}"
         return this
     }
 
-    fun init(context: Context, dbInfo: DbInfo, repoInfo: RepoInfo): SqliteBackupRestore{
-//        gitManager = GitManager("jeadyu", "healthcare-publisher", "af19696ba3697a0d2831598268441d79")
-        gitManager = GitManager(repoInfo.repoOwner, repoInfo.repoName, repoInfo.accessToken)
+    /**
+     * init with git server backup sys
+     * @param context: context
+     * @param dbInfo: sqlite database info [DbInfo]
+     * @param repoInfo: git server info [RepoInfo]
+     */
+    fun init(context: Context, dbInfo: DbInfo, repoInfo: RepoInfo?): SqliteBackupRestore{
+        repoInfo?.let {
+            gitManager = GitManager(repoInfo.repoOwner, repoInfo.repoName, repoInfo.accessToken)
+        }
         return init(context, dbInfo)
     }
 
-    fun backupDatabase(context: Context, backupPath: String): String?{
+    /**
+     * backup file to local
+     * @param context: context
+     * @param backupPath: backup file path; u should make the path is writable for your app
+     * @return: true: backup success; false: backup failed, and u can find error msg at [errMsg]
+     */
+    fun backupFile(context: Context, backupPath: String): Boolean{
+        errMsg = ""
         try {
             val dbName = File(backupPath).name
             val originalDbPath = "${context.applicationInfo.dataDir}/databases/$dbName"
             if(!File(originalDbPath).exists()){
                 errMsg = "file $originalDbPath is not exists"
-                return null
+                return false
             }
             val dirFile = File(backupPath).parentFile
             if(dirFile?.isDirectory == false){
                 if(!dirFile.mkdirs()){
-                    return backupDatabase(context, Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS).path)
+                    return backupFile(context, Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS).path)
                 }
             }
             val inputStream = FileInputStream(originalDbPath)
@@ -67,24 +94,32 @@ object SqliteBackupRestore {
             inputStream.close()
             outputStream.flush()
             outputStream.close()
-            return backupPath
+            return true
         } catch (e: IOException) {
             e.printStackTrace()
-            return ""
+            errMsg = e.localizedMessage.toString()
+            return false
         }
     }
 
-    fun restoreFromLocal(restoreFilePath: String=downloadDbPath, overrideMode: OverrideMode=OverrideMode.UNSPECIFIED): Boolean{
+    /**
+     * restore file from local
+     * @param restoreFilePath: backup file path
+     * @param overrideMode: override mode if local database is not empty; default is [OverrideMode.UNSPECIFIED]
+     * @return: true: restore success; false: restore failed, and u can find error msg at [errMsg]
+     */
+    fun restoreFile(restoreFilePath: String, overrideMode: OverrideMode=OverrideMode.UNSPECIFIED): Boolean{
         errMsg = ""
         if(File(restoreFilePath).isFile){
             val count = dbHelper.count()
-            fun restore(){
+            fun restore(): Boolean{
                 Log.d(TAG, "restore: from $originDbPath to $restoreFilePath")
                 try {
                     File(restoreFilePath).copyTo(File(originDbPath), overwrite = true)
-                    // showTip("恢复记录成功")
+                    return true
                 }catch (e: Exception){
-                    // showTip("复制失败 $e")
+                    errMsg = e.localizedMessage.toString()
+                    return false
                 }
             }
             if(count > 0){
@@ -92,7 +127,7 @@ object SqliteBackupRestore {
                     errMsg = "override mode not specified"
                     return false
                 }else if(overrideMode == OverrideMode.Override){
-                        restore()
+                    return restore()
                 }else{
                     errMsg = dbHelper.merge(restoreFilePath)?:""
                     return errMsg == ""
@@ -108,32 +143,50 @@ object SqliteBackupRestore {
     }
 
     /**
-     * 从git仓库下载并恢复记录
+     * restore file from git server
+     * @param gitPath: git server file path; the path is based on git server and owner/repo name. e.g. if your git path is "https://github.com/jeady/testRepo/file", the param gitPath just is "file"
+     * @param localPath: local file path; the path is that the file be downloaded
+     * @param reDownload: whether to download file from git server if the file was exists
+     * @param overrideMode: override mode if local database is not empty; default is [OverrideMode.UNSPECIFIED]
+     * @param restoreCallback: callback when restore finished；return true: restore success; false: restore failed, and u can find error msg at [errMsg]
+     *
+     *
      */
-    fun downloadAndRestore(gitPath: String, reDownload: Boolean): Boolean{
+    fun restoreFile(gitPath: String, localPath: String= downloadDbPath, reDownload: Boolean=true, overrideMode: OverrideMode=OverrideMode.UNSPECIFIED, restoreCallback: (Boolean) -> Unit){
         errMsg = ""
         if(!::gitManager.isInitialized){
             errMsg = "git not be initialized"
-            return false
+            restoreCallback(false)
         }
         if(gitPath.isBlank()){
             errMsg = "git Path can not be blank"
-            return false
+            restoreCallback(false)
         }
         fun downloadAndRestore(){
-            gitManager.downloadFile(gitPath, downloadDbPath) { res ->
+            gitManager.downloadFile(gitPath, localPath) { res ->
                 Log.d(TAG, "TestVersionControl: restore from cloud res: $res")
-                restoreFromLocal()
+                res.errMsg?.let{
+                    errMsg = it
+                    restoreCallback(false)
+                }?:run{
+                    restoreCallback(restoreFile(localPath, overrideMode=overrideMode))
+                }
             }
         }
-        if(File(downloadDbPath).exists() && !reDownload) {
-            restoreFromLocal()
+        if(File(localPath).exists() && !reDownload) {
+            restoreCallback(restoreFile(localPath, overrideMode=overrideMode))
         }else{
             downloadAndRestore()
         }
-        return errMsg == ""
     }
-    fun uploadFile(gitPath: String, uploadCallback: (Boolean) -> Unit){
+
+    /**
+     * backup file to git server
+     * @param gitPath: git server file path; the path is based on git server and owner/repo name. e.g. if your git path is "https://github.com/jeady/testRepo/file", the param gitPath just is "file"
+     * @param uploadCallback: callback when upload finished；return true: upload success; false: upload failed, and u can find error msg at [errMsg]
+     */
+    fun backupFile(gitPath: String, uploadCallback: (Boolean) -> Unit){
+        errMsg = ""
         if(!::gitManager.isInitialized){
             errMsg = "git not be initialized"
             uploadCallback(false)
@@ -144,26 +197,45 @@ object SqliteBackupRestore {
             originDbPath, gitPath,
             "上传测试记录($backupDate)"
         ) {
-            uploadCallback(true)
+            Log.d(TAG, "uploadFile: it $it")
+            errMsg = it?:""
+            uploadCallback(it?.contains("download_url")?:false)
         }
     }
 }
 
+/**
+ * override mode
+ * @param UNSPECIFIED: not specified; if local database is not empty, will error
+ * @param Override: override local database if local database is not empty
+ * @param Merge: merge the database if local database is not empty
+ */
 enum class OverrideMode{
     UNSPECIFIED,
     Override,
     Merge
 }
 
+/**
+ * git info
+ * @param repoOwner: repo owner
+ * @param repoName: repo name
+ * @param accessToken: access token
+ */
 data class RepoInfo(
     val repoOwner: String,
     val repoName: String,
     val accessToken: String
 )
 
+/**
+ * local sqlite database info
+ * @param dbHelper: sqlite helper that extends [SQLiteOpenHelper]
+ * @param database: database name
+ * @param table: table name
+ */
 data class DbInfo(
     val dbHelper: SQLiteOpenHelper,
     val database: String,
-    val table: String,
-    val fields: Array<String>
+    val table: String
 )
